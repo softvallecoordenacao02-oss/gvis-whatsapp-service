@@ -333,7 +333,7 @@ app.get(['/', '/qr'], async (req, res) => {
 
 /**
  * POST /send-message
- * Envia mensagem para número ou grupo
+ * Envia mensagem EXCLUSIVAMENTE para o grupo "Teste do G-VIS"
  */
 app.post('/send-message', async (req, res) => {
     if (!isConnected || !sock) {
@@ -343,24 +343,25 @@ app.post('/send-message', async (req, res) => {
         });
     }
 
-    const { phone, jid, to, message, text } = req.body;
-    const rawDest = String(jid || phone || to || '').trim();
+    const { jid, group, message, text } = req.body;
+    const rawDest = String(jid || group || 'Teste do G-VIS').trim();
     const messageText = String(message || text || '').trim();
 
-    if (!rawDest) {
-        return res.status(400).json({ success: false, error: 'Destinatário não informado.' });
-    }
     if (!messageText) {
         return res.status(400).json({ success: false, error: 'Mensagem vazia.' });
     }
 
-    let targetJid = rawDest;
+    let targetGroupJid = null;
 
     try {
-        // Se o destinatário for o grupo do G-VIS pelo nome ou palavra-chave
-        if (rawDest.toLowerCase() === 'grupo' || rawDest.toLowerCase().includes('g-vis') || rawDest.toLowerCase().includes('teste')) {
-            const groups = await sock.groupFetchAllParticipating();
-            const groupList = Object.values(groups);
+        const groups = await sock.groupFetchAllParticipating();
+        const groupList = Object.values(groups);
+
+        // 1. Se já forneceu diretamente o JID do grupo (@g.us)
+        if (rawDest.endsWith('@g.us')) {
+            targetGroupJid = rawDest;
+        } else {
+            // 2. Busca pelo nome do grupo oficial 'Teste do G-VIS'
             const foundGroup = groupList.find(g => 
                 g.subject && (
                     g.subject.toLowerCase().includes('teste do g-vis') || 
@@ -368,35 +369,35 @@ app.post('/send-message', async (req, res) => {
                 )
             );
             if (foundGroup) {
-                targetJid = foundGroup.id;
-                console.log(`[WhatsApp] Destinatário identificado como grupo: ${foundGroup.subject} (${targetJid})`);
+                targetGroupJid = foundGroup.id;
+                console.log(`[WhatsApp] Grupo 'Teste do G-VIS' localizado: ${foundGroup.subject} (${targetGroupJid})`);
             }
         }
 
-        // Se for número individual (não for JID de grupo @g.us)
-        if (!targetJid.includes('@g.us')) {
-            let digits = targetJid.replace(/\D/g, '');
-            if (digits.length === 10 || digits.length === 11) {
-                digits = '55' + digits;
-            }
-            targetJid = `${digits}@s.whatsapp.net`;
+        // Regra Estrita: Envio exclusivo para o grupo
+        if (!targetGroupJid || !targetGroupJid.endsWith('@g.us')) {
+            console.warn("[WhatsApp] Bloqueado: Grupo 'Teste do G-VIS' não encontrado entre os grupos conectados.");
+            return res.status(404).json({
+                success: false,
+                error: "Envio bloqueado: Mensagens de performance são restritas ao grupo 'Teste do G-VIS'. Adicione o número ao grupo no WhatsApp."
+            });
         }
 
-        console.log(`[WhatsApp] Enviando mensagem para ${targetJid}...`);
-        const sent = await sock.sendMessage(targetJid, { text: messageText });
+        console.log(`[WhatsApp] Enviando mensagem exclusivamente para o grupo ${targetGroupJid}...`);
+        const sent = await sock.sendMessage(targetGroupJid, { text: messageText });
 
         // Força modo oculto logo após enviar para manter o bot invisível
         await setOfflineMode();
 
         return res.json({
             success: true,
-            target: targetJid,
+            group: targetGroupJid,
             messageId: sent.key.id,
             timestamp: new Date().toISOString()
         });
 
     } catch (err) {
-        console.error('[WhatsApp] Falha ao despachar mensagem:', err);
+        console.error('[WhatsApp] Falha ao despachar mensagem para o grupo:', err);
         return res.status(500).json({
             success: false,
             error: err.message

@@ -48,11 +48,10 @@ Microserviço WhatsApp autônomo baseado no **Baileys**, projetado para rodar no
 - **`GET /groups`**: Lista todos os grupos conectados e seus respectivos JIDs (`...@g.us`).
 - **`GET /set-offline`**: Força o status de presença para offline/oculto (`unavailable`).
 - **`GET /ping`**: Endpoint ultraleve de keep-alive para evitar o sleep de 15 minutos do Render Free.
-- **`POST /send-message`**: Envia mensagem para qualquer número ou JID de grupo.
+- **`POST /send-message`**: Envia mensagem exclusivamente para o grupo **Teste do G-VIS**.
   - Body JSON:
     ```json
     {
-      "phone": "grupo",
-      "message": "Mensagem a ser enviada..."
+      "message": "Mensagem a ser enviada para o grupo..."
     }
     ```
