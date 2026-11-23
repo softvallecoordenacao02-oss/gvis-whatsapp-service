@@ -405,6 +405,27 @@ app.post('/send-message', async (req, res) => {
     }
 });
 
+// ==========================================
+// AUTOMAÇÃO 100% NUVEM (A CADA 1 HORA)
+// ==========================================
+const TEST_INTERVAL_MS = 60 * 60 * 1000; // 1 hora
+setInterval(async () => {
+    if (!isConnected) {
+        console.log('[Automação Nuvem] WhatsApp ainda desconectado. Aguardando conexão para disparar teste horário...');
+        return;
+    }
+    console.log('[Automação Nuvem] ⏰ Disparando teste de performance automático via hospedagem...');
+    try {
+        const resp = await fetch('https://testegvisa.freedev.app/api.php', {
+            headers: { 'User-Agent': 'G-VIS-Cloud-Cron/1.0' }
+        });
+        const data = await resp.json().catch(() => ({}));
+        console.log('[Automação Nuvem] ✅ Teste concluído com sucesso e despachado para o WhatsApp!');
+    } catch (err) {
+        console.error('[Automação Nuvem] Aviso ao disparar teste na hospedagem:', err.message);
+    }
+}, TEST_INTERVAL_MS);
+
 app.listen(PORT, () => {
     console.log(`[Serviço WhatsApp G-VIS] Rodando na porta ${PORT}`);
     console.log(`Acesse http://localhost:${PORT}/qr para parear o WhatsApp`);
