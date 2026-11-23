@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: gvis-whatsapp-service
+    env: node
+    plan: free
+    region: ohio
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: LOG_LEVEL
+        value: silent

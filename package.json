@@ -1,0 +1,19 @@
+{
+  "name": "gvis-whatsapp-service",
+  "version": "1.0.0",
+  "description": "Microserviço Baileys WhatsApp para Notificações do G-VIS no Render",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.6.0",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "pino": "^9.0.0",
+    "qrcode": "^1.5.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
