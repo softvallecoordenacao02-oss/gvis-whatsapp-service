@@ -406,6 +406,20 @@ app.post('/send-message', async (req, res) => {
 });
 
 // ==========================================
+// ANTI-SLEEP NATIVO 24/7: AUTO-PING A CADA 20 SEGUNDOS
+// Mantém o container do Render permanentemente ativo sem necessidade de cron
+// ==========================================
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL || 'https://gvis-whatsapp.onrender.com';
+setInterval(() => {
+    fetch(`${RENDER_EXTERNAL_URL}/ping`)
+        .then(res => res.json())
+        .then(d => {
+            // Auto-ping registrado com sucesso a cada 20s
+        })
+        .catch(() => {});
+}, 20000); // Exatos 20 segundos
+
+// ==========================================
 // AUTOMAÇÃO 100% NUVEM (A CADA 1 HORA)
 // ==========================================
 const TEST_INTERVAL_MS = 60 * 60 * 1000; // 1 hora
