@@ -16,7 +16,12 @@ const {
 } = require('@whiskeysockets/baileys');
 const path = require('path');
 const fs = require('fs');
-const { executarTestePerformance, formatarMensagemWhatsApp } = require('./testRunner');
+let testRunner = null;
+try {
+    testRunner = require('./testRunner');
+} catch (e) {
+    console.log('[Info] testRunner.js não encontrado; modo microserviço Baileys ativo.');
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -421,9 +426,16 @@ setInterval(() => {
 // ROTA PARA EXECUÇÃO SOB DEMANDA DO TESTE
 // ==========================================
 app.get('/executar-teste', async (req, res) => {
+    if (!testRunner) {
+        return res.status(503).json({
+            sucesso: false,
+            erro: 'testRunner.js não está carregado. Os testes são executados diretamente pelo painel na Vercel.'
+        });
+    }
+
     try {
         console.log('[API] 🚀 Requisição recebida para /executar-teste...');
-        const { resultado, mensagemWhatsApp } = await executarTestePerformance();
+        const { resultado, mensagemWhatsApp } = await testRunner.executarTestePerformance();
 
         let waEnviado = false;
         if (sock && isConnected) {
@@ -460,27 +472,26 @@ app.get('/executar-teste', async (req, res) => {
 // ==========================================
 const TEST_INTERVAL_MS = 60 * 60 * 1000; // 1 hora
 setInterval(async () => {
+    if (!testRunner) return; // Se testRunner não estiver presente, a execução é delegada à Vercel
+
     console.log('[Automação Nuvem ⏰] Iniciando teste de performance automático horário...');
     try {
-        const { resultado, mensagemWhatsApp } = await executarTestePerformance();
-        console.log('[Automação Nuvem] ✅ Teste executado e atualizado no painel via FTP!');
+        const { resultado, mensagemWhatsApp } = await testRunner.executarTestePerformance();
+        console.log('[Automação Nuvem] ✅ Teste executado com sucesso!');
 
         if (sock && isConnected) {
             const groups = await sock.groupFetchAllParticipating();
             const groupList = Object.values(groups);
-            const foundGroup = groupList.find(g => 
-                g.subject && (
-                    g.subject.toLowerCase().includes('teste do g-vis') || 
-                    g.subject.toLowerCase().includes('g-vis')
-                )
-            );
+            const foundGroup = groupList.find(isOfficialTestGroup);
             if (foundGroup) {
                 await sock.sendMessage(foundGroup.id, { text: mensagemWhatsApp });
                 await setOfflineMode();
-                console.log('[Automação Nuvem] 📲 Relatório enviado com sucesso para o grupo Teste do G-VIS!');
+                console.log(`[Automação Nuvem] 📲 Relatório enviado exclusivamente para o grupo oficial: ${foundGroup.subject} (${foundGroup.id})`);
+            } else {
+                console.warn(`[Automação Nuvem] 🛑 Grupo oficial 'Teste do G-VIS' (${OFFICIAL_GROUP_JID}) não encontrado. Nenhuma mensagem enviada.`);
             }
         } else {
-            console.log('[Automação Nuvem] ℹ️ WhatsApp offline no momento; painel web atualizado.');
+            console.log('[Automação Nuvem] ℹ️ WhatsApp offline no momento.');
         }
     } catch (err) {
         console.error('[Automação Nuvem] Erro no teste automático:', err.message);
