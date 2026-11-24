@@ -16,6 +16,7 @@ const {
 } = require('@whiskeysockets/baileys');
 const path = require('path');
 const fs = require('fs');
+const { executarTestePerformance, formatarMensagemWhatsApp } = require('./testRunner');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,6 +35,19 @@ const startTime = Date.now();
 
 // Logger silencioso para não poluir o terminal
 const logger = pino({ level: process.env.LOG_LEVEL || 'silent' });
+
+// ==========================================
+// CONFIGURAÇÃO E TRAVA DE SEGURANÇA WHATSAPP
+// ==========================================
+const OFFICIAL_GROUP_JID = '120363432601138971@g.us';
+const OFFICIAL_GROUP_NAME = 'teste do g-vis';
+
+function isOfficialTestGroup(g) {
+    if (!g) return false;
+    if (g.id === OFFICIAL_GROUP_JID) return true;
+    const subj = (g.subject || g.name || '').trim().toLowerCase();
+    return subj === OFFICIAL_GROUP_NAME;
+}
 
 /**
  * Força o bot para Modo Oculto (unavailable / offline)
@@ -148,12 +162,7 @@ app.get('/status', async (req, res) => {
             const groups = await sock.groupFetchAllParticipating();
             const groupList = Object.values(groups);
             groupsCount = groupList.length;
-            const targetGroup = groupList.find(g => 
-                g.subject && (
-                    g.subject.toLowerCase().includes('teste do g-vis') || 
-                    g.subject.toLowerCase().includes('g-vis')
-                )
-            );
+            const targetGroup = groupList.find(isOfficialTestGroup);
             if (targetGroup) {
                 targetGroupFound = true;
                 targetGroupJid = targetGroup.id;
@@ -207,10 +216,7 @@ app.get('/groups', async (req, res) => {
             creation: g.creation
         }));
 
-        const gvisGroup = list.find(g => 
-            g.name.toLowerCase().includes('teste do g-vis') || 
-            g.name.toLowerCase().includes('g-vis')
-        );
+        const gvisGroup = list.find(isOfficialTestGroup);
 
         res.json({
             success: true,
@@ -357,29 +363,21 @@ app.post('/send-message', async (req, res) => {
         const groups = await sock.groupFetchAllParticipating();
         const groupList = Object.values(groups);
 
-        // 1. Se já forneceu diretamente o JID do grupo (@g.us)
-        if (rawDest.endsWith('@g.us')) {
-            targetGroupJid = rawDest;
-        } else {
-            // 2. Busca pelo nome do grupo oficial 'Teste do G-VIS'
-            const foundGroup = groupList.find(g => 
-                g.subject && (
-                    g.subject.toLowerCase().includes('teste do g-vis') || 
-                    g.subject.toLowerCase().includes('g-vis')
-                )
-            );
-            if (foundGroup) {
-                targetGroupJid = foundGroup.id;
-                console.log(`[WhatsApp] Grupo 'Teste do G-VIS' localizado: ${foundGroup.subject} (${targetGroupJid})`);
-            }
+        // Busca exclusivamente o grupo oficial 'Teste do G-VIS'
+        const foundGroup = groupList.find(isOfficialTestGroup);
+        if (foundGroup) {
+            targetGroupJid = foundGroup.id;
+            console.log(`[WhatsApp] ✅ Grupo oficial localizado: ${foundGroup.subject} (${targetGroupJid})`);
+        } else if (rawDest === OFFICIAL_GROUP_JID) {
+            targetGroupJid = OFFICIAL_GROUP_JID;
         }
 
-        // Regra Estrita: Envio exclusivo para o grupo
-        if (!targetGroupJid || !targetGroupJid.endsWith('@g.us')) {
-            console.warn("[WhatsApp] Bloqueado: Grupo 'Teste do G-VIS' não encontrado entre os grupos conectados.");
-            return res.status(404).json({
+        // Regra Estrita e Inviolável de Segurança: APENAS o grupo oficial Teste do G-VIS é permitido
+        if (!targetGroupJid || targetGroupJid !== OFFICIAL_GROUP_JID) {
+            console.warn(`[WhatsApp] 🛑 BLOQUEIO DE SEGURANÇA: Tentativa de envio para '${rawDest}'. Somente o grupo oficial '${OFFICIAL_GROUP_NAME}' (${OFFICIAL_GROUP_JID}) é permitido.`);
+            return res.status(403).json({
                 success: false,
-                error: "Envio bloqueado: Mensagens de performance são restritas ao grupo 'Teste do G-VIS'. Adicione o número ao grupo no WhatsApp."
+                error: `Envio bloqueado por segurança: Mensagens de performance são restritas EXCLUSIVAMENTE ao grupo 'Teste do G-VIS' (JID: ${OFFICIAL_GROUP_JID}). O número não enviará para nenhum outro grupo ou contato.`
             });
         }
 
@@ -420,23 +418,72 @@ setInterval(() => {
 }, 20000); // Exatos 20 segundos
 
 // ==========================================
+// ROTA PARA EXECUÇÃO SOB DEMANDA DO TESTE
+// ==========================================
+app.get('/executar-teste', async (req, res) => {
+    try {
+        console.log('[API] 🚀 Requisição recebida para /executar-teste...');
+        const { resultado, mensagemWhatsApp } = await executarTestePerformance();
+
+        let waEnviado = false;
+        if (sock && isConnected) {
+            try {
+                const groups = await sock.groupFetchAllParticipating();
+                const groupList = Object.values(groups);
+                const foundGroup = groupList.find(isOfficialTestGroup);
+                if (foundGroup) {
+                    await sock.sendMessage(foundGroup.id, { text: mensagemWhatsApp });
+                    await setOfflineMode();
+                    waEnviado = true;
+                    console.log(`[API] ✅ Relatório enviado exclusivamente para o grupo oficial: ${foundGroup.subject} (${foundGroup.id})`);
+                } else {
+                    console.warn(`[API] 🛑 Grupo oficial 'Teste do G-VIS' (${OFFICIAL_GROUP_JID}) não encontrado. Nenhuma mensagem enviada.`);
+                }
+            } catch (errWa) {
+                console.error('[API] Falha no envio WhatsApp:', errWa.message);
+            }
+        }
+
+        return res.json({
+            sucesso: true,
+            whatsapp_enviado: waEnviado,
+            dados: resultado
+        });
+    } catch (err) {
+        console.error('[API] Erro ao executar teste:', err);
+        return res.status(500).json({ sucesso: false, erro: err.message });
+    }
+});
+
+// ==========================================
 // AUTOMAÇÃO 100% NUVEM (A CADA 1 HORA)
 // ==========================================
 const TEST_INTERVAL_MS = 60 * 60 * 1000; // 1 hora
 setInterval(async () => {
-    if (!isConnected) {
-        console.log('[Automação Nuvem] WhatsApp ainda desconectado. Aguardando conexão para disparar teste horário...');
-        return;
-    }
-    console.log('[Automação Nuvem] ⏰ Disparando teste de performance automático via hospedagem...');
+    console.log('[Automação Nuvem ⏰] Iniciando teste de performance automático horário...');
     try {
-        const resp = await fetch('https://testegvisa.freedev.app/api.php', {
-            headers: { 'User-Agent': 'G-VIS-Cloud-Cron/1.0' }
-        });
-        const data = await resp.json().catch(() => ({}));
-        console.log('[Automação Nuvem] ✅ Teste concluído com sucesso e despachado para o WhatsApp!');
+        const { resultado, mensagemWhatsApp } = await executarTestePerformance();
+        console.log('[Automação Nuvem] ✅ Teste executado e atualizado no painel via FTP!');
+
+        if (sock && isConnected) {
+            const groups = await sock.groupFetchAllParticipating();
+            const groupList = Object.values(groups);
+            const foundGroup = groupList.find(g => 
+                g.subject && (
+                    g.subject.toLowerCase().includes('teste do g-vis') || 
+                    g.subject.toLowerCase().includes('g-vis')
+                )
+            );
+            if (foundGroup) {
+                await sock.sendMessage(foundGroup.id, { text: mensagemWhatsApp });
+                await setOfflineMode();
+                console.log('[Automação Nuvem] 📲 Relatório enviado com sucesso para o grupo Teste do G-VIS!');
+            }
+        } else {
+            console.log('[Automação Nuvem] ℹ️ WhatsApp offline no momento; painel web atualizado.');
+        }
     } catch (err) {
-        console.error('[Automação Nuvem] Aviso ao disparar teste na hospedagem:', err.message);
+        console.error('[Automação Nuvem] Erro no teste automático:', err.message);
     }
 }, TEST_INTERVAL_MS);
 
